@@ -1,2 +1,5 @@
-Compressed/
-Songs/
+Compressed/*
+!Compressed/.gitkeep
+
+Songs/*
+!Songs/.gitkeep
