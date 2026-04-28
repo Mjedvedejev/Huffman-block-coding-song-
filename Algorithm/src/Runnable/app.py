@@ -122,6 +122,7 @@ def main():
     files = [
         os.path.join(songs_folder, f)
         for f in os.listdir(songs_folder)
+        if f.endswith((".wav", ".mp3", ".wave"))
     ]
 
     if not files:
