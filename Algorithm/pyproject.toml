@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "HuffmanBlockAlgorithm"
+version = "1.0.0"
+description = "HuffmanBlockAlgorithm for song encoding"
+authors = [{ name = "Tilen Tratnik","Vid Brložnik" }]
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
