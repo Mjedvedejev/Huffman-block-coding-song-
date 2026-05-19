@@ -1,5 +1,5 @@
 ::==============================================================================
-:: Creates the development environment for AramMastery
+:: Creates the development environment for Hufman-block-coding-song
 ::
 :: param: path to python.exe. Defaults to system default
 :: param: virtual environment name. Defaults to .venv

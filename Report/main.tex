@@ -1,0 +1,341 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{setspace}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{hyperref}
+\usepackage{amsmath}
+
+\onehalfspacing
+
+\title{Huffman Block Coding for Song Compression}
+\author{Tilen Tratnik and Vid Brloznik}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This report describes a project for compressing song files with Huffman coding.
+The central problem is that raw or encoded audio files can require a significant
+amount of storage, especially when many songs are stored together. The project
+implements a byte-level Huffman compression algorithm that reads audio files, measures the
+frequency of each byte value, builds an optimal prefix code for the observed
+distribution, and writes the encoded stream to a binary output file. The current
+implementation also processes multiple songs in parallel so that a group of
+input files can be compressed more efficiently.
+\end{abstract}
+
+\section{Introduction}
+
+Digital audio files are common examples of data that can quickly become large.
+A single song can contain millions of bytes, which
+requires a large amount of storage space.
+A compression algorithm compresses the same information into fewer bits, which then allows easier file storage and sending of files.
+
+This project uses the Huffman coding algorithm, which is a lossless compression algorithm. It differs from other compression algorithms because it is lossless, meaning that when compressing with other algorithms, we lose a bit of data, usually the quality drops. Huffman
+coding does not remove information. Instead, it assigns shorter codes to symbols
+that appear often and longer codes to symbols that appear rarely.
+
+The implementation in this project applies Huffman coding at the byte level.
+Rather than interpreting the musical structure of the song, the program reads
+the file as binary data. Each byte value, from 0 to 255, is treated as a symbol.
+The program counts how frequently each byte appears, builds a Huffman tree from
+those frequencies, generates binary codes from the tree, and encodes the input
+file into a compressed binary output. The program supports common song file
+extensions such as \texttt{.wav}, \texttt{.wave}, and \texttt{.mp3}.
+
+The project also uses parallel execution. Since each song can be compressed
+independently, several files can be processed at the same time. This can be done without problems, since all the binary files use their own trees and do not overlap. By distributing the work across multiple
+processes, the total running time for a folder of songs is expected to decrease
+on machines with multiple CPU cores. This does not affect the quality of compression, but just speeds up the code.
+
+\section{Problem Description}
+In this project, we address the problem of lossless song compression with the use of Huffman-coding algorithm
+
+The program receives a
+folder of songs as input and produces compressed binary files as an output. For
+each input file, the program reports the original size and the compressed size.
+These values can then be used to evaluate the effectiveness of the compression.
+
+The project has four main requirements. First, it must be able
+to read audio files as binary data, it must analyze the data, and create
+a code that reflects the frequency distribution of the file,and it must
+write a compressed version of each file. Finally, when multiple files are
+available, it must process them efficiently.
+
+The challenge comes from the fact that different types of audio files have very
+different internal structures. A \texttt{.wav} file is often much closer to raw
+audio data and may contain repeated byte patterns, especially if the audio has
+silence, simple waveforms, or predictable structure. An \texttt{.mp3} file, on
+the other hand, is already compressed using a its own audio compression
+method. Because the MP3 format has already removed redundancy and packed the
+remaining information efficiently, a second compression method will not achieve much. Sometimes the file will become even larger after compression, due to the added padding and metadata
+
+Another important part of the problem is choosing the unit of compression. This
+project uses individual bytes as symbols, because this was specified in the project description. Because of that every file can be represented as a sequence of bytes, so the
+algorithm does not need to understand the details of the file format. However,
+byte-level Huffman coding does not capture longer repeated patterns in the data.
+It only uses the frequency of single byte values. Therefore, the compression
+ratio depends strongly on whether some byte values occur much more often than
+others.
+
+It is named the Huffman block coding algorithm, because the algorithm treats each file as a block of data and builds a code for that block.
+Each song receives its own
+frequency table and its own Huffman tree.
+
+This is done because different songs and file formats have different byte distributions, so a code that would work for one file wont work for another. By building the tree per file, the algorithm adapts to the compressed data.
+
+\section{Huffman Coding Background}
+
+Huffman coding is a variable-length prefix coding algorithm. In a fixed-length
+code, every symbol receives a code of the same size. For example, if there are
+256 possible byte values, each byte normally requires 8 bits. Huffman coding
+changes this by assigning shorter bit strings to frequent symbols and longer bit
+strings to infrequent symbols. If the distribution is uneven, the average number
+of bits per symbol can become smaller than 8.
+
+The algorithm begins with a frequency count. For a file represented as a byte
+array, the compressor counts how many times each byte value occurs. Each byte
+value becomes a leaf node in a tree, and the frequency becomes the weight of
+that node. The tree is then built using a priority queue. The two nodes with the smallest frequencies are repeatedly removed
+from the heap and merged into a new parent node whose frequency is the sum of
+the two leaf nodes below it, the new node is then inserted back into the heap. This process
+continues until only one node remains. That final node is the root of the tree.
+
+The binary code for each byte is obtained by walking from the root to the leaf
+node representing that byte. Moving to the left child adds a \texttt{0} to the
+code, and moving to the right child adds a \texttt{1}. Since every symbol is a
+leaf, no complete code is the prefix of another complete code. This prefix
+property is what allows the encoded strings to be uniquely decodable.
+
+The efficiency of Huffman coding depends on the frequency distribution. If all
+symbols appear with nearly equal frequency, Huffman coding achieves almost nothing, since all of the symbols would require similar string lengths. If some symbols
+are much more common than others, the algorithm can reduce the average code
+length. This is why the method is often effective for text or simple binary
+data, while it may be less effective on data that has already been compressed.
+
+\section{Implemented Solution}
+
+The implementation is written in Python and is contained in the runnable \texttt{"app.py"} file. The program reads all supported song files from the
+\texttt{Algorithm/src/Songs} folder and writes compressed outputs to the
+\texttt{Algorithm/src/Compressed} folder. The supported file extensions are
+\texttt{.wav}, \texttt{.wave}, and \texttt{.mp3}.
+
+The solution is organized into several clear stages. The first stage is file
+loading. The function responsible for this opens an input file in binary mode
+and returns its contents as a byte array. This is important because the program
+does not treat the song as text. Audio files contain arbitrary byte values, so
+binary reading is required to preserve the original data.
+
+The second stage is frequency analysis and tree construction. The program uses a
+counter to count every byte value in the input. Each unique byte becomes a node
+in a min-heap. The heap makes it efficient to repeatedly select the two least
+frequent nodes, which is the core operation in Huffman tree construction. These
+nodes are merged until the tree has a single root.
+
+The third stage is code generation. A recursive function parses the tree and
+builds a dictionary that maps each byte value to a binary string. A left branch
+adds \texttt{0}, and a right branch adds \texttt{1}. The result is a codebook
+for the current file. This codebook is specific to the file being compressed
+because it depends on that file's byte frequencies.
+
+The fourth stage is encoding. The input byte array is replaced by the
+corresponding Huffman code for each byte. These codes are concatenated into one
+long bit string. Since files are written in whole bytes, the program pads the
+bit string with zeros until its length is divisible by 8. It then groups the bit
+string into eight-bit chunks and writes each chunk as one byte to the compressed
+output file.
+
+The final stage is parallel execution. The main function searches the songs
+folder for supported audio files and sends them to a process pool. Each worker
+process compresses one file independently and returns the original and
+compressed sizes. After all files have been processed, the program prints a
+summary for each file.
+
+\subsection{Running the program}
+
+To run the algorithm you must first install python, (the latest version works). Then you should run the \texttt{"create\_venv.bat"} file which will create a virtual environment for you.
+
+Next you need to add your desired songs to the predefined folder, you can add multiple and the program will use parallel execution to process them all.
+
+\section{Expectations}
+
+Before testing, several expectations can be made based on the theory of Huffman
+coding and the nature of audio files.
+
+The first expectation is that uncompressed or lightly compressed audio files,
+especially \texttt{.wav} files, should have the best chance of size reduction.
+
+The second expectation is that \texttt{.mp3} files will compress poorly or not
+at all. MP3 is already a compressed audio format. Its data is designed to remove
+redundancy and represent audio efficiently. Since Huffman coding relies on redundancies, it will not achieve much here. The resulting file may be similar in size or larger than the
+original.
+
+The third expectation is that compression quality will vary from song to song.
+Two files with the same extension may still have different byte distributions.
+For example, silence, repeated sections, encoding settings, metadata, and audio
+complexity can all affect the frequency count. Therefore, the compression ratio
+should be measured per file rather than assumed from the file type alone.
+
+The fourth expectation is that parallel execution will help most when there are
+multiple input files. If only one song is present, there is no benefit from parallelism, because the only thing that is being split is the compression and even that is split per song, because breaking up the code block of 1 song causes issues with combining it back, If several songs are in
+the folder, multiple processes can work at the same time, reducing total
+execution time on a multi-core processor. The exact speedup depends on the
+number of files, file sizes, CPU cores, and overhead from process creation.
+
+The fifth expectation is that the compressed file size reported by the program
+will reflect only the encoded data and padding, not the additional metadata that
+would be required for decompression. Because of this, the reported compressed
+size may be slightly optimistic compared with a complete archive format.
+
+\section{Evaluation Method}
+
+The evaluation should compare each original song file with its compressed
+output. The most direct measurements are original size, compressed size, saved
+bytes, and compression ratio. The saved bytes can be calculated as
+
+\[
+\text{saved bytes} = \text{original size} - \text{compressed size}.
+\]
+
+The compression ratio can be calculated as
+
+\[
+\text{compression ratio} =
+\frac{\text{compressed size}}{\text{original size}}.
+\]
+
+A ratio below 1 means the compressed file is smaller than the original. A ratio
+equal to 1 means there is no meaningful size change. A ratio above 1 means the
+output is larger than the input.
+
+It is also useful to calculate the percentage reduction:
+
+\[
+\text{reduction percentage} =
+\left(1 - \frac{\text{compressed size}}{\text{original size}}\right)
+\times 100.
+\]
+
+Positive percentages indicate that space was saved. Negative percentages
+indicate that the output became larger.
+
+\section{Results}
+
+We tested the compression algorithm on three different songs in two different
+audio formats: \texttt{.wav} and \texttt{.mp3}. We expected a bigger reduction
+for the \texttt{.wav} files, because they are usually less compressed, and only
+a small reduction for the \texttt{.mp3} files, because MP3 is already a
+compressed audio format.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{>{\raggedright\arraybackslash}p{4cm}rrrr}
+\toprule
+File name & Original size (Bytes) & Compressed size (Bytes) & Ratio & Reduction \\
+\midrule
+Tool - Parabola (.wav) & 107184206 & 100470327 & 93.74\% & 6713879 bytes \\
+Tool - Parabola (.mp3) & 24306348 & 24197275 & 99.55\% & 109073 bytes \\
+Gorillaz - Feel Good Inc (.wav) & 44982350 & 40483558 & 90.00\% & 4498792 bytes \\
+Gorillaz - Feel Good Inc (.mp3) & 10202038 & 10169890 & 99.68\% & 32148 bytes \\
+Zablujena generacija - Idrje (.wav) & 22700110 & 22122998 & 97.46\% & 577112 bytes \\
+Zablujena generacija - Idrje (.mp3) & 5146677 & 5124566 & 99.57\% & 22111 bytes \\
+\bottomrule
+\end{tabular}
+\caption{Compression results for tested song files.}
+\end{table}
+
+\noindent
+The results show that the compression algorithm worked much better on the
+\texttt{.wav} files than on the \texttt{.mp3} files. The best result was achieved
+on the Gorillaz \texttt{.wav} file, where the file size was reduced by
+4,498,792 bytes, which is a reduction of 10.00\%. The Tool \texttt{.wav} file was
+reduced by 6,713,879 bytes, which represents a reduction of 6.26\%. The
+Zablujena generacija \texttt{.wav} file had the smallest \texttt{.wav}
+reduction, with 577,112 bytes saved, or 2.54\%.
+
+The \texttt{.mp3} files were compressed only slightly. The Gorillaz
+\texttt{.mp3} file was reduced by only 32,148 bytes, or 0.32\%. The Tool
+\texttt{.mp3} file was reduced by 109,073 bytes, or 0.45\%, and the Zablujena
+generacija \texttt{.mp3} file was reduced by 22,111 bytes, or 0.43\%.
+
+Overall, the total original size of all tested files was 214,521,729 bytes, and
+the total compressed size was 202,568,614 bytes. This means that the total
+reduction was 11,953,115 bytes, giving an overall compression ratio of 94.43\%
+and an overall reduction of 5.57\%.
+
+An important observation is that the compression result does not depend only on
+the length or size of the song. For example, the Tool \texttt{.wav} file was the
+largest file and had the largest reduction in bytes, but the Gorillaz
+\texttt{.wav} file had the best percentage reduction. This shows that the
+internal byte distribution of the file has a strong influence on Huffman
+compression. Files with more uneven byte frequencies can be compressed better,
+while files with a more uniform distribution are harder to reduce.
+
+\section{Discussion}
+
+The measured results match the theoretical expectations of Huffman coding. The
+\texttt{.wav} files achieved noticeably better compression than the
+\texttt{.mp3} files. This is expected because \texttt{.wav} files usually contain
+less compressed audio data, while \texttt{.mp3} files have already been processed
+by a specialized lossy audio compression algorithm.
+
+The best compression ratio was achieved by the Gorillaz \texttt{.wav} file,
+which was reduced to 90.00\% of its original size. This means that the algorithm
+saved exactly 10.00\% of the original file size. The Tool \texttt{.wav} file was
+reduced to 93.74\% of its original size, while the Zablujena generacija
+\texttt{.wav} file was reduced to 97.46\%. These differences show that Huffman
+coding does not compress all \texttt{.wav} files equally. The result depends on
+how often different byte values appear in the file.
+
+The \texttt{.mp3} files showed very small improvements. Their compression ratios
+were between 99.55\% and 99.68\%, meaning that less than 0.5\% of the file size
+was saved in each case. This confirms that Huffman coding is not very effective
+when applied to data that has already been compressed. Since MP3 compression
+already removes or encodes much of the redundancy in the audio data, there is
+very little remaining structure for a simple byte-level Huffman algorithm to
+exploit.
+
+The results also show a limitation of using only byte-level Huffman coding. The
+algorithm only looks at the frequency of individual bytes. It does not search
+for repeated sequences, and it does not understand the structure of audio data.
+Because of this, it can reduce some files, but it cannot compete with specialized
+audio compression formats.
+
+The parallel part of the implementation affects mainly the runtime and not the
+compression ratio. Each file is still compressed independently using its own
+Huffman tree. Therefore, the compressed size of each file should remain the same
+whether the file is compressed alone or together with other files in a process
+pool. The advantage of parallel processing is that multiple files can be
+compressed at the same time, which can make the whole process faster.
+
+\section{Conclusion}
+
+This project implemented a byte-level Huffman compression system for song files.
+The program reads audio files as binary data, counts byte frequencies, builds a
+Huffman tree, generates prefix codes, encodes the file, and writes the compressed
+binary output. It also uses parallel processing so that multiple files can be
+compressed independently at the same time.
+
+The final results confirmed the expected behavior of the algorithm. The
+\texttt{.wav} files showed meaningful compression, with reductions between
+2.54\% and 10.00\%.The \texttt{.mp3} files showed only
+minor reductions, all below 0.5\%, because they were already compressed before
+being processed by the Huffman algorithm.
+
+Across all tested files, the total size was reduced from 214,521,729 bytes to
+202,568,614 bytes. This produced a total reduction of 11,953,115 bytes, or
+5.57\%. The overall compression ratio was 94.43\%.
+
+The project demonstrates the main principles of lossless compression, including
+frequency analysis, variable-length coding, prefix codes, and the relationship
+between data distribution and compression performance. It also shows that the
+effectiveness of a compression algorithm depends strongly on the type and
+structure of the input data. Huffman coding can reduce files that still contain
+redundancy, but it has limited effect on files that are already compressed, such
+as MP3 audio files.
+
+\end{document}
