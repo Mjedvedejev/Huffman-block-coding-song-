@@ -5,6 +5,6 @@ Project for the TOR III class
 This folder contains the songs
 
 ## SUPPORTED FORMATS
-- .WAWE
-- .WAW
+- .WAVE
+- .WAV
 - .MP3
